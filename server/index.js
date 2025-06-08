@@ -63,6 +63,7 @@ app.locals.db = pool;
 // Routes
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/projects', require('./routes/projects'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
