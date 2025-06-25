@@ -1,8 +1,28 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireActive } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
+
+// Multer storage configuration for project files
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/';
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage: storage });
 
 // Apply authentication to all routes
 router.use(authenticateToken);
@@ -18,9 +38,10 @@ router.get('/', requireAdmin, async (req, res) => {
     const status = req.query.status || '';
 
     let query = `
-      SELECT p.*, u.username as created_by_username
+      SELECT p.*, u.username as created_by_username, c.name as customer_name
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
+      LEFT JOIN customers c ON p.customer_id = c.id
     `;
     let countQuery = 'SELECT COUNT(*) FROM projects p';
     let queryParams = [];
@@ -90,7 +111,11 @@ router.post('/', [
   body('status')
     .optional()
     .isIn(['started', 'active', 'done'])
-    .withMessage('Status must be one of: started, active, done')
+    .withMessage('Status must be one of: started, active, done'),
+  body('customer_id')
+    .optional()
+    .isInt()
+    .withMessage('Customer ID must be a valid integer')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -101,7 +126,7 @@ router.post('/', [
       });
     }
 
-    const { name, description = '', status = 'started' } = req.body;
+    const { name, description = '', status = 'started', customer_id } = req.body;
 
     // Check if project name already exists
     const existingProject = await req.app.locals.db.query(
@@ -113,21 +138,36 @@ router.post('/', [
       return res.status(409).json({ message: 'Project name already exists' });
     }
 
+    // Validate customer exists if provided
+    if (customer_id) {
+      const customerCheck = await req.app.locals.db.query(
+        'SELECT id FROM customers WHERE id = $1',
+        [customer_id]
+      );
+      if (customerCheck.rows.length === 0) {
+        return res.status(400).json({ message: 'Invalid customer ID' });
+      }
+    }
+
     // Create project
     const result = await req.app.locals.db.query(
-      'INSERT INTO projects (name, description, status, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
-      [name, description, status, req.user.userId]
+      'INSERT INTO projects (name, description, status, customer_id, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [name, description, status, customer_id || null, req.user.userId]
     );
 
-    // Get the created project with creator info
-    const projectWithCreator = await req.app.locals.db.query(
-      'SELECT p.*, u.username as created_by_username FROM projects p LEFT JOIN users u ON p.created_by = u.id WHERE p.id = $1',
+    // Get the created project with creator and customer info
+    const projectWithInfo = await req.app.locals.db.query(
+      `SELECT p.*, u.username as created_by_username, c.name as customer_name 
+       FROM projects p 
+       LEFT JOIN users u ON p.created_by = u.id 
+       LEFT JOIN customers c ON p.customer_id = c.id 
+       WHERE p.id = $1`,
       [result.rows[0].id]
     );
 
     res.status(201).json({
       message: 'Project created successfully',
-      project: projectWithCreator.rows[0]
+      project: projectWithInfo.rows[0]
     });
 
   } catch (error) {
@@ -146,7 +186,11 @@ router.get('/:id', requireAdmin, async (req, res) => {
     }
 
     const result = await req.app.locals.db.query(
-      'SELECT p.*, u.username as created_by_username FROM projects p LEFT JOIN users u ON p.created_by = u.id WHERE p.id = $1',
+      `SELECT p.*, u.username as created_by_username, c.name as customer_name 
+       FROM projects p 
+       LEFT JOIN users u ON p.created_by = u.id 
+       LEFT JOIN customers c ON p.customer_id = c.id 
+       WHERE p.id = $1`,
       [projectId]
     );
 
@@ -158,6 +202,56 @@ router.get('/:id', requireAdmin, async (req, res) => {
 
   } catch (error) {
     console.error('Get project error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/:id/files - Get all files for a project
+router.get('/:id/files', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    if (isNaN(projectId)) {
+      return res.status(400).json({ message: 'Invalid project ID' });
+    }
+    
+    // In a future implementation, we could filter by is_public based on user role.
+    // For now, any authenticated user can see all files for a project.
+    const result = await req.app.locals.db.query(
+      'SELECT * FROM project_files WHERE project_id = $1 ORDER BY created_at DESC',
+      [projectId]
+    );
+
+    res.json({ files: result.rows });
+
+  } catch (error) {
+    console.error('Get project files error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/upload - Upload a file for a project
+router.post('/:id/upload', upload.single('file'), async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { is_public = true } = req.body;
+    const { originalname, filename, path: filePath, mimetype, size } = req.file;
+    
+    if (isNaN(projectId)) {
+      return res.status(400).json({ message: 'Invalid project ID' });
+    }
+
+    const result = await req.app.locals.db.query(
+      `INSERT INTO project_files 
+        (project_id, original_name, stored_name, file_path, file_type, file_size, is_public, uploaded_by) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [projectId, originalname, filename, filePath, mimetype, size, is_public, req.user.userId]
+    );
+
+    res.status(201).json({ message: 'File uploaded successfully', file: result.rows[0] });
+
+  } catch (error) {
+    console.error('File upload error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -177,7 +271,14 @@ router.put('/:id', requireAdmin, [
   body('status')
     .optional()
     .isIn(['started', 'active', 'done'])
-    .withMessage('Status must be one of: started, active, done')
+    .withMessage('Status must be one of: started, active, done'),
+  body('customer_id')
+    .optional()
+    .custom((value) => {
+      if (value === null || value === '') return true; // Allow null/empty for removing customer
+      if (!Number.isInteger(Number(value))) throw new Error('Customer ID must be a valid integer or null');
+      return true;
+    })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -195,11 +296,11 @@ router.put('/:id', requireAdmin, [
     }
 
     const updates = {};
-    const allowedFields = ['name', 'description', 'status'];
+    const allowedFields = ['name', 'description', 'status', 'customer_id'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
-        updates[field] = req.body[field];
+        updates[field] = req.body[field] === '' ? null : req.body[field];
       }
     });
 
@@ -216,6 +317,17 @@ router.put('/:id', requireAdmin, [
 
       if (existingProject.rows.length > 0) {
         return res.status(409).json({ message: 'Project name already exists' });
+      }
+    }
+
+    // Validate customer exists if provided
+    if (updates.customer_id) {
+      const customerCheck = await req.app.locals.db.query(
+        'SELECT id FROM customers WHERE id = $1',
+        [updates.customer_id]
+      );
+      if (customerCheck.rows.length === 0) {
+        return res.status(400).json({ message: 'Invalid customer ID' });
       }
     }
 
@@ -237,15 +349,19 @@ router.put('/:id', requireAdmin, [
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    // Get the updated project with creator info
-    const projectWithCreator = await req.app.locals.db.query(
-      'SELECT p.*, u.username as created_by_username FROM projects p LEFT JOIN users u ON p.created_by = u.id WHERE p.id = $1',
+    // Get the updated project with creator and customer info
+    const projectWithInfo = await req.app.locals.db.query(
+      `SELECT p.*, u.username as created_by_username, c.name as customer_name 
+       FROM projects p 
+       LEFT JOIN users u ON p.created_by = u.id 
+       LEFT JOIN customers c ON p.customer_id = c.id 
+       WHERE p.id = $1`,
       [projectId]
     );
 
     res.json({
       message: 'Project updated successfully',
-      project: projectWithCreator.rows[0]
+      project: projectWithInfo.rows[0]
     });
 
   } catch (error) {

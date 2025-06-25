@@ -9,6 +9,20 @@ const router = express.Router();
 router.use(authenticateToken);
 router.use(requireActive);
 
+// GET /api/users/active - Get all active users for assignments (any authenticated user can access)
+router.get('/active', async (req, res) => {
+  try {
+    const result = await req.app.locals.db.query(
+      'SELECT id, username, email, role FROM users WHERE is_active = true ORDER BY username ASC'
+    );
+
+    res.json({ users: result.rows });
+  } catch (error) {
+    console.error('Get active users error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // GET /api/users - Get all users (admin only)
 router.get('/', requireAdmin, async (req, res) => {
   try {

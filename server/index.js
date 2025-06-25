@@ -35,7 +35,7 @@ pool.connect((err, client, release) => {
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: config.NODE_ENV === 'production' ? ['your-production-domain.com'] : ['http://localhost:3000'],
+  origin: config.NODE_ENV === 'production' ? ['https://project-tracker-three-plum.vercel.app'] : ['http://localhost:3000', 'https://project-tracker-three-plum.vercel.app'],
   credentials: true
 }));
 
@@ -50,7 +50,7 @@ app.use(limiter);
 // Stricter rate limiting for auth routes  
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
+  max: 20, // limit each IP to 20 requests per windowMs
   message: 'Too many authentication attempts, please try again later.'
 });
 
@@ -60,10 +60,42 @@ app.use(express.urlencoded({ extended: true }));
 // Make pool available to routes
 app.locals.db = pool;
 
+// Serve uploaded files statically
+app.use('/uploads', express.static('uploads'));
+
 // Routes
 app.use('/api/auth', authLimiter, require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/projects', require('./routes/projects'));
+app.use('/api/customers', require('./routes/customers'));
+app.use('/api/files', require('./routes/files'));
+app.use('/api', require('./routes/todos'));
+
+// Root landing page
+app.get('/', (req, res) => {
+  res.status(200).send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Server Status</title>
+      <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
+        .status-card { background-color: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center; }
+        .status-indicator { height: 20px; width: 20px; background-color: #28a745; border-radius: 50%; display: inline-block; margin-right: 10px; vertical-align: middle; }
+        .status-text { font-size: 24px; color: #333; vertical-align: middle; }
+      </style>
+    </head>
+    <body>
+      <div class="status-card">
+        <span class="status-indicator"></span>
+        <span class="status-text">Server is up and running</span>
+      </div>
+    </body>
+    </html>
+  `);
+});
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

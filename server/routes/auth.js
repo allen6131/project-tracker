@@ -14,6 +14,13 @@ try {
 
 const router = express.Router();
 
+// Handle preflight requests
+router.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.sendStatus(200);
+});
+
 // Generate JWT token
 const generateToken = (user) => {
   return jwt.sign(
@@ -34,8 +41,15 @@ router.post('/login', [
   body('password').isLength({ min: 1 }).withMessage('Password is required')
 ], async (req, res) => {
   try {
+    console.log('Login attempt:', { 
+      username: req.body.username, 
+      origin: req.headers.origin,
+      timestamp: new Date().toISOString() 
+    });
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors:', errors.array());
       return res.status(400).json({
         message: 'Validation failed',
         errors: errors.array()
