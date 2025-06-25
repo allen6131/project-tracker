@@ -35,7 +35,7 @@ pool.connect((err, client, release) => {
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: config.NODE_ENV === 'production' ? ['https://project-tracker-three-plum.vercel.app'] : ['http://localhost:3000', 'https://project-tracker-three-plum.vercel.app'],
+  origin: config.NODE_ENV === 'production' ? ['https://amptrack.vercel.app'] : ['http://localhost:3000', 'https://amptrack.vercel.app'],
   credentials: true
 }));
 
