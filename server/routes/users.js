@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const { authenticateToken, requireAdmin, requireActive } = require('../middleware/auth');
+const EmailService = require('../services/emailService');
 
 const router = express.Router();
 
@@ -124,9 +125,28 @@ router.post('/', requireAdmin, [
       [username, email, hashedPassword, role]
     );
 
+    const newUser = result.rows[0];
+
+    // Send welcome email if service is available
+    if (EmailService.isAvailable()) {
+      try {
+        const emailResult = await EmailService.sendWelcomeEmail(newUser);
+        if (emailResult.success) {
+          console.log(`Welcome email sent to ${newUser.email}`);
+        } else {
+          console.warn('Welcome email service not configured');
+        }
+      } catch (emailError) {
+        console.error('Failed to send welcome email:', emailError);
+        // Don't fail the user creation if email fails
+      }
+    } else {
+      console.warn('Email service not available - welcome email not sent');
+    }
+
     res.status(201).json({
       message: 'User created successfully',
-      user: result.rows[0]
+      user: newUser
     });
 
   } catch (error) {

@@ -7,9 +7,12 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "init-db": "node scripts/initDb.js",
-    "update-db": "node scripts/updateSchema.js"
+    "update-db": "node scripts/updateSchema.js",
+    "check-config": "node scripts/check-config.js"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.839.0",
+    "aws-sdk": "^2.1692.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -19,7 +22,9 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.1",
-    "pg": "^8.11.3"
+    "nodemailer": "^7.0.4",
+    "pg": "^8.11.3",
+    "stripe": "^18.2.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

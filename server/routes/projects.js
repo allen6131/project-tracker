@@ -38,10 +38,15 @@ router.get('/', requireAdmin, async (req, res) => {
     const status = req.query.status || '';
 
     let query = `
-      SELECT p.*, u.username as created_by_username, c.name as customer_name
+      SELECT p.*, 
+             u.username as created_by_username, 
+             c.name as customer_name,
+             mt.username as main_technician_username,
+             mt.email as main_technician_email
       FROM projects p
       LEFT JOIN users u ON p.created_by = u.id
       LEFT JOIN customers c ON p.customer_id = c.id
+      LEFT JOIN users mt ON p.main_technician_id = mt.id
     `;
     let countQuery = 'SELECT COUNT(*) FROM projects p';
     let queryParams = [];
@@ -115,7 +120,11 @@ router.post('/', [
   body('customer_id')
     .optional()
     .isInt()
-    .withMessage('Customer ID must be a valid integer')
+    .withMessage('Customer ID must be a valid integer'),
+  body('main_technician_id')
+    .optional()
+    .isInt()
+    .withMessage('Main technician ID must be a valid integer')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -126,7 +135,7 @@ router.post('/', [
       });
     }
 
-    const { name, description = '', status = 'started', customer_id } = req.body;
+    const { name, description = '', status = 'started', customer_id, main_technician_id } = req.body;
 
     // Check if project name already exists
     const existingProject = await req.app.locals.db.query(
@@ -149,20 +158,47 @@ router.post('/', [
       }
     }
 
+    // Validate main technician exists if provided
+    if (main_technician_id) {
+      const technicianCheck = await req.app.locals.db.query(
+        'SELECT id FROM users WHERE id = $1 AND is_active = true',
+        [main_technician_id]
+      );
+      if (technicianCheck.rows.length === 0) {
+        return res.status(400).json({ message: 'Invalid main technician ID or user is not active' });
+      }
+    }
+
     // Create project
     const result = await req.app.locals.db.query(
-      'INSERT INTO projects (name, description, status, customer_id, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name, description, status, customer_id || null, req.user.userId]
+      'INSERT INTO projects (name, description, status, customer_id, main_technician_id, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [name, description, status, customer_id || null, main_technician_id || null, req.user.userId]
     );
 
-    // Get the created project with creator and customer info
+    const projectId = result.rows[0].id;
+
+    // Create default folders for the new project
+    const defaultFolders = ['Bidding', 'Plans and Drawings', 'Plan Review', 'Field Markups'];
+    for (const folderName of defaultFolders) {
+      await req.app.locals.db.query(
+        'INSERT INTO project_folders (project_id, name, is_default, created_by) VALUES ($1, $2, true, $3)',
+        [projectId, folderName, req.user.userId]
+      );
+    }
+
+    // Get the created project with creator, customer, and main technician info
     const projectWithInfo = await req.app.locals.db.query(
-      `SELECT p.*, u.username as created_by_username, c.name as customer_name 
+      `SELECT p.*, 
+              u.username as created_by_username, 
+              c.name as customer_name,
+              mt.username as main_technician_username,
+              mt.email as main_technician_email
        FROM projects p 
        LEFT JOIN users u ON p.created_by = u.id 
        LEFT JOIN customers c ON p.customer_id = c.id 
+       LEFT JOIN users mt ON p.main_technician_id = mt.id
        WHERE p.id = $1`,
-      [result.rows[0].id]
+      [projectId]
     );
 
     res.status(201).json({
@@ -186,10 +222,15 @@ router.get('/:id', requireAdmin, async (req, res) => {
     }
 
     const result = await req.app.locals.db.query(
-      `SELECT p.*, u.username as created_by_username, c.name as customer_name 
+      `SELECT p.*, 
+              u.username as created_by_username, 
+              c.name as customer_name,
+              mt.username as main_technician_username,
+              mt.email as main_technician_email
        FROM projects p 
        LEFT JOIN users u ON p.created_by = u.id 
        LEFT JOIN customers c ON p.customer_id = c.id 
+       LEFT JOIN users mt ON p.main_technician_id = mt.id
        WHERE p.id = $1`,
       [projectId]
     );
@@ -215,10 +256,13 @@ router.get('/:id/files', async (req, res) => {
       return res.status(400).json({ message: 'Invalid project ID' });
     }
     
-    // In a future implementation, we could filter by is_public based on user role.
-    // For now, any authenticated user can see all files for a project.
+    // Get files with folder information
     const result = await req.app.locals.db.query(
-      'SELECT * FROM project_files WHERE project_id = $1 ORDER BY created_at DESC',
+      `SELECT pf.*, pfolder.name as folder_name 
+       FROM project_files pf 
+       LEFT JOIN project_folders pfolder ON pf.folder_id = pfolder.id 
+       WHERE pf.project_id = $1 
+       ORDER BY pf.created_at DESC`,
       [projectId]
     );
 
@@ -234,18 +278,34 @@ router.get('/:id/files', async (req, res) => {
 router.post('/:id/upload', upload.single('file'), async (req, res) => {
   try {
     const projectId = parseInt(req.params.id);
-    const { is_public = true } = req.body;
+    const { is_public = true, folder_id } = req.body;
     const { originalname, filename, path: filePath, mimetype, size } = req.file;
     
     if (isNaN(projectId)) {
       return res.status(400).json({ message: 'Invalid project ID' });
     }
 
+    let finalFolderId = null;
+    
+    // If folder_id is provided, validate it belongs to the project
+    if (folder_id) {
+      const folderIdInt = parseInt(folder_id);
+      if (!isNaN(folderIdInt)) {
+        const folderResult = await req.app.locals.db.query(
+          'SELECT id FROM project_folders WHERE id = $1 AND project_id = $2',
+          [folderIdInt, projectId]
+        );
+        if (folderResult.rows.length > 0) {
+          finalFolderId = folderIdInt;
+        }
+      }
+    }
+
     const result = await req.app.locals.db.query(
       `INSERT INTO project_files 
-        (project_id, original_name, stored_name, file_path, file_type, file_size, is_public, uploaded_by) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-      [projectId, originalname, filename, filePath, mimetype, size, is_public, req.user.userId]
+        (project_id, original_name, stored_name, file_path, file_type, file_size, is_public, uploaded_by, folder_id) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [projectId, originalname, filename, filePath, mimetype, size, is_public, req.user.userId, finalFolderId]
     );
 
     res.status(201).json({ message: 'File uploaded successfully', file: result.rows[0] });
@@ -278,6 +338,13 @@ router.put('/:id', requireAdmin, [
       if (value === null || value === '') return true; // Allow null/empty for removing customer
       if (!Number.isInteger(Number(value))) throw new Error('Customer ID must be a valid integer or null');
       return true;
+    }),
+  body('main_technician_id')
+    .optional()
+    .custom((value) => {
+      if (value === null || value === '') return true; // Allow null/empty for removing main technician
+      if (!Number.isInteger(Number(value))) throw new Error('Main technician ID must be a valid integer or null');
+      return true;
     })
 ], async (req, res) => {
   try {
@@ -296,7 +363,7 @@ router.put('/:id', requireAdmin, [
     }
 
     const updates = {};
-    const allowedFields = ['name', 'description', 'status', 'customer_id'];
+    const allowedFields = ['name', 'description', 'status', 'customer_id', 'main_technician_id'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
@@ -331,6 +398,17 @@ router.put('/:id', requireAdmin, [
       }
     }
 
+    // Validate main technician exists if provided
+    if (updates.main_technician_id) {
+      const technicianCheck = await req.app.locals.db.query(
+        'SELECT id FROM users WHERE id = $1 AND is_active = true',
+        [updates.main_technician_id]
+      );
+      if (technicianCheck.rows.length === 0) {
+        return res.status(400).json({ message: 'Invalid main technician ID or user is not active' });
+      }
+    }
+
     // Build dynamic query
     const setClause = Object.keys(updates).map((key, index) => `${key} = $${index + 1}`).join(', ');
     const values = Object.values(updates);
@@ -349,12 +427,17 @@ router.put('/:id', requireAdmin, [
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    // Get the updated project with creator and customer info
+    // Get the updated project with creator, customer, and main technician info
     const projectWithInfo = await req.app.locals.db.query(
-      `SELECT p.*, u.username as created_by_username, c.name as customer_name 
+      `SELECT p.*, 
+              u.username as created_by_username, 
+              c.name as customer_name,
+              mt.username as main_technician_username,
+              mt.email as main_technician_email
        FROM projects p 
        LEFT JOIN users u ON p.created_by = u.id 
        LEFT JOIN customers c ON p.customer_id = c.id 
+       LEFT JOIN users mt ON p.main_technician_id = mt.id
        WHERE p.id = $1`,
       [projectId]
     );
@@ -395,6 +478,138 @@ router.delete('/:id', requireAdmin, async (req, res) => {
 
   } catch (error) {
     console.error('Delete project error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/:id/folders - Get all folders for a project
+router.get('/:id/folders', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+
+    if (isNaN(projectId)) {
+      return res.status(400).json({ message: 'Invalid project ID' });
+    }
+
+    const result = await req.app.locals.db.query(
+      'SELECT * FROM project_folders WHERE project_id = $1 ORDER BY is_default DESC, name ASC',
+      [projectId]
+    );
+
+    res.json({ folders: result.rows });
+
+  } catch (error) {
+    console.error('Get project folders error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:id/folders - Create a new folder (admin only)
+router.post('/:id/folders', requireAdmin, [
+  body('name')
+    .trim()
+    .isLength({ min: 1, max: 255 })
+    .withMessage('Folder name must be between 1 and 255 characters')
+    .custom((value, { req }) => {
+      // Check for special characters that might cause issues
+      if (value.includes('/') || value.includes('\\')) {
+        throw new Error('Folder name cannot contain slashes');
+      }
+      return true;
+    })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const projectId = parseInt(req.params.id);
+    const { name } = req.body;
+
+    if (isNaN(projectId)) {
+      return res.status(400).json({ message: 'Invalid project ID' });
+    }
+
+    // Check if folder name already exists for this project
+    const existingFolder = await req.app.locals.db.query(
+      'SELECT id FROM project_folders WHERE project_id = $1 AND name = $2',
+      [projectId, name]
+    );
+
+    if (existingFolder.rows.length > 0) {
+      return res.status(409).json({ message: 'Folder name already exists for this project' });
+    }
+
+    // Create folder
+    const result = await req.app.locals.db.query(
+      'INSERT INTO project_folders (project_id, name, is_default, created_by) VALUES ($1, $2, false, $3) RETURNING *',
+      [projectId, name, req.user.userId]
+    );
+
+    res.status(201).json({
+      message: 'Folder created successfully',
+      folder: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Create folder error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// DELETE /api/projects/:projectId/folders/:folderId - Delete a folder (admin only)
+router.delete('/:projectId/folders/:folderId', requireAdmin, async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    const folderId = parseInt(req.params.folderId);
+
+    if (isNaN(projectId) || isNaN(folderId)) {
+      return res.status(400).json({ message: 'Invalid project ID or folder ID' });
+    }
+
+    // Check if folder exists and belongs to the project
+    const folderResult = await req.app.locals.db.query(
+      'SELECT * FROM project_folders WHERE id = $1 AND project_id = $2',
+      [folderId, projectId]
+    );
+
+    if (folderResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Folder not found' });
+    }
+
+    const folder = folderResult.rows[0];
+
+    // Prevent deletion of default folders
+    if (folder.is_default) {
+      return res.status(400).json({ message: 'Cannot delete default folders' });
+    }
+
+    // Check if folder has files
+    const filesResult = await req.app.locals.db.query(
+      'SELECT COUNT(*) FROM project_files WHERE folder_id = $1',
+      [folderId]
+    );
+
+    if (parseInt(filesResult.rows[0].count) > 0) {
+      return res.status(400).json({ 
+        message: 'Cannot delete folder that contains files. Please move or delete all files first.' 
+      });
+    }
+
+    // Delete folder
+    await req.app.locals.db.query(
+      'DELETE FROM project_folders WHERE id = $1',
+      [folderId]
+    );
+
+    res.json({ message: 'Folder deleted successfully' });
+
+  } catch (error) {
+    console.error('Delete folder error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

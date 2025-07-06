@@ -16,21 +16,38 @@ try {
 
 const app = express();
 
-// Database connection
-const pool = new Pool({
-  connectionString: config.DATABASE_URL,
-  ssl: config.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
-
-// Test database connection
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('Error connecting to the database:', err);
-  } else {
-    console.log('Connected to PostgreSQL database');
-    release();
+// Database connection with proper error handling
+let pool;
+try {
+  const databaseUrl = config.DATABASE_URL || process.env.DATABASE_URL;
+  
+  if (!databaseUrl || databaseUrl.includes('postgresql://username:password@localhost')) {
+    console.error('DATABASE_URL not configured properly');
+    console.error('Please set DATABASE_URL environment variable or create config.js file');
+    process.exit(1);
   }
-});
+
+  pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: config.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  });
+
+  // Test database connection
+  pool.connect((err, client, release) => {
+    if (err) {
+      console.error('Error connecting to the database:', err);
+      console.error('Please check your DATABASE_URL configuration');
+      process.exit(1);
+    } else {
+      console.log('Connected to PostgreSQL database');
+      release();
+    }
+  });
+
+} catch (error) {
+  console.error('Failed to initialize database connection:', error);
+  process.exit(1);
+}
 
 // Middleware
 app.use(helmet());
@@ -69,6 +86,11 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/customers', require('./routes/customers'));
 app.use('/api/files', require('./routes/files'));
+app.use('/api/estimates', require('./routes/estimates'));
+app.use('/api/invoices', require('./routes/invoices'));
+app.use('/api/payments', require('./routes/payments'));
+app.use('/api/materials', require('./routes/materials'));
+app.use('/api/rfi', require('./routes/rfi'));
 app.use('/api', require('./routes/todos'));
 
 // Root landing page
@@ -116,8 +138,11 @@ app.use('*', (req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-const PORT = config.PORT;
+const PORT = config.PORT || process.env.PORT || 6000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${config.NODE_ENV}`);
+  console.log(`Database configured: ${!!pool}`);
+  console.log(`Email service available: ${require('./services/emailService').isAvailable()}`);
+  console.log(`Payment service available: ${require('./services/stripeService').isAvailable()}`);
 }); 

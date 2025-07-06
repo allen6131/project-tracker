@@ -106,4 +106,57 @@ router.put('/:fileId', async (req, res) => {
   }
 });
 
+// PUT /api/files/:fileId/move - Move a file to a different folder
+router.put('/:fileId/move', async (req, res) => {
+  try {
+    const fileId = parseInt(req.params.fileId);
+    const { folder_id } = req.body;
+
+    if (isNaN(fileId)) {
+      return res.status(400).json({ message: 'Invalid file ID' });
+    }
+
+    // Get the file to verify it exists and get the project_id
+    const fileResult = await req.app.locals.db.query(
+      'SELECT * FROM project_files WHERE id = $1',
+      [fileId]
+    );
+
+    if (fileResult.rows.length === 0) {
+      return res.status(404).json({ message: 'File not found' });
+    }
+
+    const file = fileResult.rows[0];
+    let finalFolderId = null;
+
+    // If folder_id is provided, validate it belongs to the same project
+    if (folder_id) {
+      const folderIdInt = parseInt(folder_id);
+      if (!isNaN(folderIdInt)) {
+        const folderResult = await req.app.locals.db.query(
+          'SELECT id FROM project_folders WHERE id = $1 AND project_id = $2',
+          [folderIdInt, file.project_id]
+        );
+        if (folderResult.rows.length > 0) {
+          finalFolderId = folderIdInt;
+        } else {
+          return res.status(400).json({ message: 'Invalid folder ID or folder does not belong to this project' });
+        }
+      }
+    }
+
+    // Update the file's folder
+    const result = await req.app.locals.db.query(
+      'UPDATE project_files SET folder_id = $1 WHERE id = $2 RETURNING *',
+      [finalFolderId, fileId]
+    );
+
+    res.json({ message: 'File moved successfully', file: result.rows[0] });
+
+  } catch (error) {
+    console.error('Move file error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 module.exports = router; 
