@@ -511,6 +511,34 @@ const createMaterialReceiptsTable = async () => {
   }
 };
 
+// Create global_materials_catalog table
+const createGlobalMaterialsCatalogTable = async () => {
+  const query = `
+    CREATE TABLE IF NOT EXISTS global_materials_catalog (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      description TEXT,
+      category VARCHAR(100),
+      unit VARCHAR(50) DEFAULT 'each',
+      standard_cost DECIMAL(10,2) DEFAULT 0.00,
+      supplier VARCHAR(255),
+      part_number VARCHAR(100),
+      notes TEXT,
+      is_active BOOLEAN DEFAULT true,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
+  try {
+    await pool.query(query);
+    console.log('global_materials_catalog table created successfully (if it did not exist).');
+  } catch (error) {
+    console.error('Error creating global_materials_catalog table:', error);
+  }
+};
+
 const updateDatabase = async () => {
   await createProjectFilesTable();
   await createTodoTables();
@@ -531,6 +559,7 @@ const updateDatabase = async () => {
   await addMainTechnicianToProjects();
   await createProjectMaterialsTable();
   await createMaterialReceiptsTable();
+  await createGlobalMaterialsCatalogTable();
   // Add other schema updates here in the future
   
   await pool.end();

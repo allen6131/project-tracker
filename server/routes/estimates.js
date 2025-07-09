@@ -497,6 +497,42 @@ router.post('/:id/create-project', [
   }
 });
 
+// GET /api/estimates/customer/:customerId - Get estimates by customer ID
+router.get('/customer/:customerId', async (req, res) => {
+  try {
+    const customerId = parseInt(req.params.customerId);
+    
+    if (isNaN(customerId)) {
+      return res.status(400).json({ message: 'Invalid customer ID' });
+    }
+
+    const estimatesResult = await req.app.locals.db.query(
+      `SELECT e.*, u.username as created_by_username, c.name as customer_name
+       FROM estimates e
+       LEFT JOIN users u ON e.created_by = u.id
+       LEFT JOIN customers c ON e.customer_id = c.id
+       WHERE e.customer_id = $1
+       ORDER BY e.created_at DESC`,
+      [customerId]
+    );
+
+    // Convert decimal values to numbers for each estimate
+    const estimates = estimatesResult.rows.map(estimate => ({
+      ...estimate,
+      subtotal: parseFloat(estimate.subtotal) || 0,
+      tax_rate: parseFloat(estimate.tax_rate) || 0,
+      tax_amount: parseFloat(estimate.tax_amount) || 0,
+      total_amount: parseFloat(estimate.total_amount) || 0
+    }));
+
+    res.json({ estimates });
+
+  } catch (error) {
+    console.error('Get customer estimates error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Helper function to get estimate with items
 async function getEstimateWithItems(db, estimateId) {
   const estimateResult = await db.query(

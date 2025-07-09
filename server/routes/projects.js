@@ -103,7 +103,7 @@ router.get('/', requireAdmin, async (req, res) => {
 });
 
 // POST /api/projects - Create new project (admin only)
-router.post('/', [
+router.post('/', requireAdmin, [
   body('name')
     .trim()
     .isLength({ min: 1, max: 200 })

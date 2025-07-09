@@ -467,6 +467,45 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// GET /api/invoices/project/:projectId - Get invoices by project ID
+router.get('/project/:projectId', async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    
+    if (isNaN(projectId)) {
+      return res.status(400).json({ message: 'Invalid project ID' });
+    }
+
+    const invoicesResult = await req.app.locals.db.query(
+      `SELECT i.*, u.username as created_by_username, c.name as customer_name,
+              e.title as estimate_title, p.name as project_name
+       FROM invoices i
+       LEFT JOIN users u ON i.created_by = u.id
+       LEFT JOIN customers c ON i.customer_id = c.id
+       LEFT JOIN estimates e ON i.estimate_id = e.id
+       LEFT JOIN projects p ON i.project_id = p.id
+       WHERE i.project_id = $1
+       ORDER BY i.created_at DESC`,
+      [projectId]
+    );
+
+    // Convert decimal values to numbers for each invoice
+    const invoices = invoicesResult.rows.map(invoice => ({
+      ...invoice,
+      subtotal: parseFloat(invoice.subtotal) || 0,
+      tax_rate: parseFloat(invoice.tax_rate) || 0,
+      tax_amount: parseFloat(invoice.tax_amount) || 0,
+      total_amount: parseFloat(invoice.total_amount) || 0
+    }));
+
+    res.json({ invoices });
+
+  } catch (error) {
+    console.error('Get project invoices error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Helper function to generate invoice number
 async function generateInvoiceNumber(db) {
   const year = new Date().getFullYear();
