@@ -113,18 +113,34 @@ router.post('/', requireAdmin, [
     .trim()
     .isLength({ max: 1000 })
     .withMessage('Description must not exceed 1000 characters'),
+  body('address')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Address must not exceed 500 characters'),
+  body('permit_number')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Permit number must not exceed 100 characters'),
   body('status')
     .optional()
-    .isIn(['started', 'active', 'done'])
-    .withMessage('Status must be one of: started, active, done'),
+    .isIn(['bidding', 'started', 'active', 'done'])
+    .withMessage('Status must be one of: bidding, started, active, done'),
   body('customer_id')
     .optional()
-    .isInt()
-    .withMessage('Customer ID must be a valid integer'),
+    .custom((value) => {
+      if (value === null || value === '' || value === undefined) return true; // Allow empty values
+      if (!Number.isInteger(Number(value))) throw new Error('Customer ID must be a valid integer or empty');
+      return true;
+    }),
   body('main_technician_id')
     .optional()
-    .isInt()
-    .withMessage('Main technician ID must be a valid integer')
+    .custom((value) => {
+      if (value === null || value === '' || value === undefined) return true; // Allow empty values
+      if (!Number.isInteger(Number(value))) throw new Error('Main technician ID must be a valid integer or empty');
+      return true;
+    })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -135,7 +151,7 @@ router.post('/', requireAdmin, [
       });
     }
 
-    const { name, description = '', status = 'started', customer_id, main_technician_id } = req.body;
+    const { name, description = '', address = '', permit_number = '', status = 'bidding', customer_id, main_technician_id } = req.body;
 
     // Check if project name already exists
     const existingProject = await req.app.locals.db.query(
@@ -171,8 +187,8 @@ router.post('/', requireAdmin, [
 
     // Create project
     const result = await req.app.locals.db.query(
-      'INSERT INTO projects (name, description, status, customer_id, main_technician_id, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [name, description, status, customer_id || null, main_technician_id || null, req.user.userId]
+      'INSERT INTO projects (name, description, address, permit_number, status, customer_id, main_technician_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+      [name, description, address || null, permit_number || null, status, customer_id || null, main_technician_id || null, req.user.userId]
     );
 
     const projectId = result.rows[0].id;
@@ -328,10 +344,20 @@ router.put('/:id', requireAdmin, [
     .trim()
     .isLength({ max: 1000 })
     .withMessage('Description must not exceed 1000 characters'),
+  body('address')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Address must not exceed 500 characters'),
+  body('permit_number')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Permit number must not exceed 100 characters'),
   body('status')
     .optional()
-    .isIn(['started', 'active', 'done'])
-    .withMessage('Status must be one of: started, active, done'),
+    .isIn(['bidding', 'started', 'active', 'done'])
+    .withMessage('Status must be one of: bidding, started, active, done'),
   body('customer_id')
     .optional()
     .custom((value) => {
@@ -363,7 +389,7 @@ router.put('/:id', requireAdmin, [
     }
 
     const updates = {};
-    const allowedFields = ['name', 'description', 'status', 'customer_id', 'main_technician_id'];
+    const allowedFields = ['name', 'description', 'address', 'permit_number', 'status', 'customer_id', 'main_technician_id'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
