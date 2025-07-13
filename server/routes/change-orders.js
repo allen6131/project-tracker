@@ -156,12 +156,12 @@ router.post('/', [
     const changeOrderResult = await req.app.locals.db.query(
       `INSERT INTO change_orders (
         change_order_number, title, description, project_id, customer_id, customer_name, 
-        customer_email, customer_phone, customer_address, reason, justification, 
+        customer_email, customer_phone, customer_address, status, reason, justification, 
         subtotal, tax_rate, tax_amount, total_amount, requested_date, notes, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING *`,
       [
         changeOrderNumber, title, description, project_id, finalCustomerId, finalCustomerName,
-        finalCustomerEmail, finalCustomerPhone, finalCustomerAddress, reason, justification,
+        finalCustomerEmail, finalCustomerPhone, finalCustomerAddress, 'draft', reason, justification,
         subtotal, tax_rate, taxAmount, totalAmount, requested_date || null, notes, req.user.userId
       ]
     );
