@@ -464,8 +464,8 @@ router.post('/:id/create-project', [
 
     // Create project
     const projectResult = await req.app.locals.db.query(
-      'INSERT INTO projects (name, description, customer_id, created_by) VALUES ($1, $2, $3, $4) RETURNING *',
-      [project_name, project_description, estimate.customer_id, req.user.userId]
+      'INSERT INTO projects (name, description, address, permit_number, customer_id, created_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [project_name, project_description, null, null, estimate.customer_id, req.user.userId]
     );
 
     const projectId = projectResult.rows[0].id;

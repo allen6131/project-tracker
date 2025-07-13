@@ -118,11 +118,16 @@ router.post('/', requireAdmin, [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Address must not exceed 500 characters'),
-  body('permit_number')
+  body('master_permit_number')
     .optional()
     .trim()
     .isLength({ max: 100 })
-    .withMessage('Permit number must not exceed 100 characters'),
+    .withMessage('Master permit number must not exceed 100 characters'),
+  body('electrical_sub_permit')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Electrical sub permit must not exceed 100 characters'),
   body('status')
     .optional()
     .isIn(['bidding', 'started', 'active', 'done'])
@@ -151,7 +156,7 @@ router.post('/', requireAdmin, [
       });
     }
 
-    const { name, description = '', address = '', permit_number = '', status = 'bidding', customer_id, main_technician_id } = req.body;
+    const { name, description = '', address = '', master_permit_number = '', electrical_sub_permit = '', status = 'bidding', customer_id, main_technician_id } = req.body;
 
     // Check if project name already exists
     const existingProject = await req.app.locals.db.query(
@@ -187,8 +192,8 @@ router.post('/', requireAdmin, [
 
     // Create project
     const result = await req.app.locals.db.query(
-      'INSERT INTO projects (name, description, address, permit_number, status, customer_id, main_technician_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [name, description, address || null, permit_number || null, status, customer_id || null, main_technician_id || null, req.user.userId]
+      'INSERT INTO projects (name, description, address, master_permit_number, electrical_sub_permit, status, customer_id, main_technician_id, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+      [name, description, address || null, master_permit_number || null, electrical_sub_permit || null, status, customer_id || null, main_technician_id || null, req.user.userId]
     );
 
     const projectId = result.rows[0].id;
@@ -349,11 +354,16 @@ router.put('/:id', requireAdmin, [
     .trim()
     .isLength({ max: 500 })
     .withMessage('Address must not exceed 500 characters'),
-  body('permit_number')
+  body('master_permit_number')
     .optional()
     .trim()
     .isLength({ max: 100 })
-    .withMessage('Permit number must not exceed 100 characters'),
+    .withMessage('Master permit number must not exceed 100 characters'),
+  body('electrical_sub_permit')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Electrical sub permit must not exceed 100 characters'),
   body('status')
     .optional()
     .isIn(['bidding', 'started', 'active', 'done'])
@@ -389,7 +399,7 @@ router.put('/:id', requireAdmin, [
     }
 
     const updates = {};
-    const allowedFields = ['name', 'description', 'address', 'permit_number', 'status', 'customer_id', 'main_technician_id'];
+    const allowedFields = ['name', 'description', 'address', 'master_permit_number', 'electrical_sub_permit', 'status', 'customer_id', 'main_technician_id'];
     
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {

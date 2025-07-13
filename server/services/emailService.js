@@ -309,6 +309,145 @@ class EmailService {
     });
   }
 
+  static async sendChangeOrderEmail(changeOrder, recipientEmail, senderName) {
+    if (!this.isAvailable()) {
+      console.warn('Cannot send change order email - email service not configured');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const subject = `Change Order ${changeOrder.change_order_number} from ${senderName}`;
+    
+    // Calculate totals for display
+    const itemsHtml = changeOrder.items?.map(item => `
+      <tr>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd;">${item.description}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: center;">${item.quantity}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">$${parseFloat(item.unit_price).toFixed(2)}</td>
+        <td style="padding: 8px; border-bottom: 1px solid #ddd; text-align: right;">$${parseFloat(item.total_price).toFixed(2)}</td>
+      </tr>
+    `).join('') || '';
+
+    const htmlBody = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #F59E0B; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }
+          .change-order-details { background-color: white; padding: 20px; border-radius: 6px; margin: 20px 0; }
+          .table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          .table th { background-color: #f3f4f6; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; }
+          .table td { padding: 8px; border-bottom: 1px solid #ddd; }
+          .totals { background-color: #f9fafb; padding: 15px; border-radius: 6px; margin: 20px 0; }
+          .total-row { display: flex; justify-content: space-between; margin: 5px 0; }
+          .final-total { font-weight: bold; font-size: 18px; border-top: 2px solid #ddd; padding-top: 10px; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+          .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+          .status-draft { background-color: #f3f4f6; color: #374151; }
+          .status-sent { background-color: #dbeafe; color: #1d4ed8; }
+          .status-approved { background-color: #d1fae5; color: #065f46; }
+          .status-rejected { background-color: #fecaca; color: #991b1b; }
+          .notice-box { background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Project Change Order</h1>
+        </div>
+        <div class="content">
+          <div class="notice-box">
+            <strong>Important Notice:</strong> This is a change order for additional work or modifications to the original project scope.
+          </div>
+          
+          <div class="change-order-details">
+            <h2>${changeOrder.title}</h2>
+            ${changeOrder.description ? `<p><strong>Description:</strong> ${changeOrder.description}</p>` : ''}
+            
+            <div style="display: flex; justify-content: space-between; margin: 20px 0;">
+              <div>
+                <p><strong>Change Order #:</strong> ${changeOrder.change_order_number}</p>
+                <p><strong>Project:</strong> ${changeOrder.project_name}</p>
+                <p><strong>Date:</strong> ${new Date(changeOrder.created_at).toLocaleDateString()}</p>
+                <p><strong>Status:</strong> <span class="status-badge status-${changeOrder.status}">${changeOrder.status.toUpperCase()}</span></p>
+                ${changeOrder.requested_date ? `<p><strong>Requested Date:</strong> ${new Date(changeOrder.requested_date).toLocaleDateString()}</p>` : ''}
+              </div>
+              <div style="text-align: right;">
+                <h3>From: ${senderName}</h3>
+                ${changeOrder.customer_name ? `<p><strong>To:</strong> ${changeOrder.customer_name}</p>` : ''}
+              </div>
+            </div>
+
+            ${changeOrder.reason ? `
+              <div style="margin: 20px 0;">
+                <h4>Reason for Change:</h4>
+                <p style="background-color: #f9fafb; padding: 15px; border-radius: 6px;">${changeOrder.reason}</p>
+              </div>
+            ` : ''}
+
+            ${changeOrder.justification ? `
+              <div style="margin: 20px 0;">
+                <h4>Justification:</h4>
+                <p style="background-color: #f9fafb; padding: 15px; border-radius: 6px;">${changeOrder.justification}</p>
+              </div>
+            ` : ''}
+
+            ${changeOrder.items && changeOrder.items.length > 0 ? `
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th style="text-align: center;">Quantity</th>
+                    <th style="text-align: right;">Unit Price</th>
+                    <th style="text-align: right;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemsHtml}
+                </tbody>
+              </table>
+
+              <div class="totals">
+                <div class="total-row">
+                  <span>Subtotal:</span>
+                  <span>$${parseFloat(changeOrder.subtotal).toFixed(2)}</span>
+                </div>
+                <div class="total-row">
+                  <span>Tax (${parseFloat(changeOrder.tax_rate).toFixed(1)}%):</span>
+                  <span>$${parseFloat(changeOrder.tax_amount).toFixed(2)}</span>
+                </div>
+                <div class="total-row final-total">
+                  <span>Total Change Order Amount:</span>
+                  <span>$${parseFloat(changeOrder.total_amount).toFixed(2)}</span>
+                </div>
+              </div>
+            ` : ''}
+
+            ${changeOrder.notes ? `
+              <div style="margin-top: 20px;">
+                <h4>Additional Notes:</h4>
+                <p style="background-color: #f9fafb; padding: 15px; border-radius: 6px;">${changeOrder.notes}</p>
+              </div>
+            ` : ''}
+          </div>
+
+          <p>Please review this change order carefully. This represents additional work beyond the original project scope and will affect the project timeline and total cost.</p>
+          <p>If you have any questions about this change order, please don't hesitate to contact us.</p>
+        </div>
+        <div class="footer">
+          <p>© 2024 AmpTrack. All rights reserved.</p>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return await this.sendEmail({
+      to: recipientEmail,
+      subject,
+      htmlBody,
+    });
+  }
+
   static async sendRFIEmail({ project, customer, contact, sender, rfi }) {
     if (!this.isAvailable()) {
       console.warn('Cannot send RFI email - email service not configured');

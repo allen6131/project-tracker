@@ -91,7 +91,9 @@ app.use('/api/invoices', require('./routes/invoices'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/catalog-materials', require('./routes/catalog-materials'));
+app.use('/api/services', require('./routes/services'));
 app.use('/api/rfi', require('./routes/rfi'));
+app.use('/api/change-orders', require('./routes/change-orders'));
 app.use('/api', require('./routes/todos'));
 
 // Root landing page

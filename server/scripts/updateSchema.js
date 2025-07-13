@@ -539,30 +539,157 @@ const createGlobalMaterialsCatalogTable = async () => {
   }
 };
 
+const updateProjectPermitFields = async () => {
+  try {
+    console.log('Updating project permit fields...');
+    
+    // Check if the old permit_number column exists
+    const checkOldColumn = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'projects' AND column_name = 'permit_number'
+    `);
+    
+    if (checkOldColumn.rows.length > 0) {
+      // Rename permit_number to master_permit_number
+      await pool.query(`
+        ALTER TABLE projects 
+        RENAME COLUMN permit_number TO master_permit_number
+      `);
+      console.log('Renamed permit_number to master_permit_number');
+    } else {
+      // Add master_permit_number if it doesn't exist
+      const checkMasterColumn = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'projects' AND column_name = 'master_permit_number'
+      `);
+      
+      if (checkMasterColumn.rows.length === 0) {
+        await pool.query(`
+          ALTER TABLE projects 
+          ADD COLUMN master_permit_number VARCHAR(255)
+        `);
+        console.log('Added master_permit_number column');
+      }
+    }
+    
+    // Check if electrical_sub_permit column exists
+    const checkSubPermitColumn = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'projects' AND column_name = 'electrical_sub_permit'
+    `);
+    
+    if (checkSubPermitColumn.rows.length === 0) {
+      await pool.query(`
+        ALTER TABLE projects 
+        ADD COLUMN electrical_sub_permit VARCHAR(255)
+      `);
+      console.log('Added electrical_sub_permit column');
+    }
+    
+    console.log('Project permit fields updated successfully');
+  } catch (error) {
+    console.error('Error updating project permit fields:', error);
+    throw error;
+  }
+};
+
+// Create change_orders table
+const createChangeOrdersTable = async () => {
+  const query = `
+    CREATE TABLE IF NOT EXISTS change_orders (
+      id SERIAL PRIMARY KEY,
+      change_order_number VARCHAR(100) UNIQUE NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      description TEXT,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      customer_id INTEGER REFERENCES customers(id),
+      customer_name VARCHAR(255),
+      customer_email VARCHAR(255),
+      customer_phone VARCHAR(50),
+      customer_address TEXT,
+      status VARCHAR(50) DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'approved', 'rejected', 'cancelled')),
+      reason TEXT,
+      justification TEXT,
+      subtotal DECIMAL(10,2) DEFAULT 0.00,
+      tax_rate DECIMAL(5,2) DEFAULT 0.00,
+      tax_amount DECIMAL(10,2) DEFAULT 0.00,
+      total_amount DECIMAL(10,2) DEFAULT 0.00,
+      requested_date DATE,
+      approved_date DATE,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
+  try {
+    await pool.query(query);
+    console.log('change_orders table created successfully (if it did not exist).');
+  } catch (error) {
+    console.error('Error creating change_orders table:', error);
+  }
+};
+
+// Create change_order_items table
+const createChangeOrderItemsTable = async () => {
+  const query = `
+    CREATE TABLE IF NOT EXISTS change_order_items (
+      id SERIAL PRIMARY KEY,
+      change_order_id INTEGER NOT NULL REFERENCES change_orders(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity DECIMAL(10,2) DEFAULT 1.00,
+      unit_price DECIMAL(10,2) DEFAULT 0.00,
+      total_price DECIMAL(10,2) DEFAULT 0.00,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+
+  try {
+    await pool.query(query);
+    console.log('change_order_items table created successfully (if it did not exist).');
+  } catch (error) {
+    console.error('Error creating change_order_items table:', error);
+  }
+};
+
 const updateDatabase = async () => {
-  await createProjectFilesTable();
-  await createTodoTables();
-  await addAssignedToColumn();
-  await addDueDateColumn();
-  await createCustomersTable();
-  await createContactsTable();
-  await addCustomerToProjects();
-  await createEstimatesTable();
-  await createEstimateItemsTable();
-  await createInvoicesTable();
-  await createInvoiceItemsTable();
-  await addPaymentFieldsToInvoices();
-  await createPasswordResetTokensTable();
-  await createProjectFoldersTable();
-  await addFolderIdToProjectFiles();
-  await createDefaultFoldersForProjects();
-  await addMainTechnicianToProjects();
-  await createProjectMaterialsTable();
-  await createMaterialReceiptsTable();
-  await createGlobalMaterialsCatalogTable();
-  // Add other schema updates here in the future
-  
-  await pool.end();
+  try {
+    console.log('Starting database update...');
+    
+    await createProjectFilesTable();
+    await createTodoTables();
+    await addAssignedToColumn();
+    await addDueDateColumn();
+    await createCustomersTable();
+    await createContactsTable();
+    await addCustomerToProjects();
+    await createEstimatesTable();
+    await createEstimateItemsTable();
+    await createInvoicesTable();
+    await addPaymentFieldsToInvoices();
+    await createInvoiceItemsTable();
+    await createPasswordResetTokensTable();
+    await createProjectFoldersTable();
+    await addFolderIdToProjectFiles();
+    await createDefaultFoldersForProjects();
+    await addMainTechnicianToProjects();
+    await createProjectMaterialsTable();
+    await createMaterialReceiptsTable();
+    await createGlobalMaterialsCatalogTable();
+    await updateProjectPermitFields();
+    await createChangeOrdersTable();
+    await createChangeOrderItemsTable();
+    
+    console.log('Database update completed successfully');
+    process.exit(0);
+  } catch (error) {
+    console.error('Database update failed:', error);
+    process.exit(1);
+  }
 };
 
 updateDatabase(); 

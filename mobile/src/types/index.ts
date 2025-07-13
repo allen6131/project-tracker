@@ -53,13 +53,20 @@ export interface UsersResponse {
   pagination: PaginationInfo;
 }
 
+// Project types
 export interface Project {
   id: number;
   name: string;
   description: string;
-  status: 'started' | 'active' | 'done';
+  status: 'bidding' | 'started' | 'active' | 'done';
+  address?: string;
+  master_permit_number?: string;
+  electrical_sub_permit?: string;
   customer_id?: number | null;
   customer_name?: string | null;
+  main_technician_id?: number | null;
+  main_technician_username?: string | null;
+  main_technician_email?: string | null;
   created_by: number;
   created_by_username?: string;
   created_at: string;
@@ -69,14 +76,19 @@ export interface Project {
 export interface CreateProjectRequest {
   name: string;
   description?: string;
-  status?: 'started' | 'active' | 'done';
+  status?: 'bidding' | 'started' | 'active' | 'done';
+  address?: string;
+  permit_number?: string;
   customer_id?: number | null;
+  main_technician_id?: number | null;
 }
 
 export interface UpdateProjectRequest {
   name?: string;
   description?: string;
-  status?: 'started' | 'active' | 'done';
+  status?: 'bidding' | 'started' | 'active' | 'done';
+  address?: string;
+  permit_number?: string;
   customer_id?: number | null;
 }
 
@@ -424,4 +436,56 @@ export interface InvoicesResponse {
     hasNextPage: boolean;
     hasPrevPage: boolean;
   };
+}
+
+export interface Service {
+  id: number;
+  name: string;
+  description?: string;
+  category?: string;
+  unit: string; // e.g., 'hour', 'each', 'sq ft', 'linear ft'
+  standard_rate: number;
+  cost?: number; // internal cost if applicable
+  notes?: string;
+  is_active: boolean;
+  created_by?: number;
+  created_by_username?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateServiceRequest {
+  name: string;
+  description?: string;
+  category?: string;
+  unit?: string;
+  standard_rate?: number;
+  cost?: number;
+  notes?: string;
+}
+
+export interface UpdateServiceRequest {
+  name?: string;
+  description?: string;
+  category?: string;
+  unit?: string;
+  standard_rate?: number;
+  cost?: number;
+  notes?: string;
+  is_active?: boolean;
+}
+
+export interface ServicesResponse {
+  services: Service[];
+  pagination: {
+    currentPage: number;
+    totalPages: number;
+    totalServices: number;
+    hasNextPage: boolean;
+    hasPrevPage: boolean;
+  };
+}
+
+export interface ServiceCategoriesResponse {
+  categories: string[];
 } 

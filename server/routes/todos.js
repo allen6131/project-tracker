@@ -8,6 +8,46 @@ const router = express.Router();
 router.use(authenticateToken);
 router.use(requireActive);
 
+// GET /api/todolists/all - Get all todo lists from all projects
+router.get('/todolists/all', async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                tl.id,
+                tl.project_id,
+                tl.title,
+                tl.created_at,
+                p.name as project_name,
+                p.address as project_location,
+                p.status as project_status
+            FROM todo_lists tl
+            JOIN projects p ON tl.project_id = p.id
+            ORDER BY tl.created_at DESC
+        `;
+        
+        const listsResult = await req.app.locals.db.query(query);
+        
+        // For each list, get its items with assigned user information
+        const lists = listsResult.rows;
+        for (let i = 0; i < lists.length; i++) {
+            const itemsResult = await req.app.locals.db.query(
+                `SELECT ti.*, u.username as assigned_username, u.role as assigned_user_role 
+                 FROM todo_items ti 
+                 LEFT JOIN users u ON ti.assigned_to = u.id 
+                 WHERE ti.todo_list_id = $1 
+                 ORDER BY ti.created_at ASC`, 
+                [lists[i].id]
+            );
+            lists[i].items = itemsResult.rows;
+        }
+
+        res.json({ todoLists: lists });
+    } catch (error) {
+        console.error('Get all todo lists error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 // TODO LISTS
 
 // GET /api/projects/:projectId/todolists - Get all lists for a project
