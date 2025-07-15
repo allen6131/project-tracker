@@ -1,0 +1,17 @@
+{
+  "name": "project-tracker",
+  "version": "1.0.0",
+  "description": "Project Tracker Application",
+  "scripts": {
+    "start": "cd server && npm start",
+    "postinstall": "cd server && npm install",
+    "heroku-postbuild": "cd server && npm install"
+  },
+  "engines": {
+    "node": "18.x",
+    "npm": "9.x"
+  },
+  "cacheDirectories": [
+    "server/node_modules"
+  ]
+} 

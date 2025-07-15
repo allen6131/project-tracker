@@ -1,0 +1,31 @@
+{
+  "name": "Project Tracker",
+  "description": "Electrical project management application",
+  "repository": "https://github.com/yourusername/project-tracker",
+  "keywords": ["node", "express", "postgresql", "react"],
+  "buildpacks": [
+    {
+      "url": "https://github.com/jontewks/puppeteer-heroku-buildpack"
+    },
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "addons": [
+    "heroku-postgresql:essential-0"
+  ],
+  "env": {
+    "NODE_ENV": {
+      "value": "production"
+    },
+    "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": {
+      "value": "true"
+    }
+  }
+} 
