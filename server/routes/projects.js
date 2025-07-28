@@ -650,4 +650,36 @@ router.delete('/:projectId/folders/:folderId', requireAdmin, async (req, res) =>
   }
 });
 
+// GET /api/projects/customer/:customerId - Get projects by customer ID
+router.get('/customer/:customerId', requireAdmin, async (req, res) => {
+  try {
+    const customerId = parseInt(req.params.customerId);
+    
+    if (isNaN(customerId)) {
+      return res.status(400).json({ message: 'Invalid customer ID' });
+    }
+
+    const result = await req.app.locals.db.query(
+      `SELECT p.*, 
+              u.username as created_by_username, 
+              c.name as customer_name,
+              mt.username as main_technician_username,
+              mt.email as main_technician_email
+       FROM projects p 
+       LEFT JOIN users u ON p.created_by = u.id 
+       LEFT JOIN customers c ON p.customer_id = c.id 
+       LEFT JOIN users mt ON p.main_technician_id = mt.id
+       WHERE p.customer_id = $1
+       ORDER BY p.created_at DESC`,
+      [customerId]
+    );
+
+    res.json({ projects: result.rows });
+
+  } catch (error) {
+    console.error('Get projects by customer error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 module.exports = router; 
