@@ -14,15 +14,32 @@ class PDFService {
   // Helper method to get company profile
   static async getCompanyProfile(db) {
     try {
+      console.log('PDFService: Fetching company profile...');
       const result = await db.query(
         'SELECT * FROM company_profiles ORDER BY id DESC LIMIT 1'
       );
       
+      console.log('PDFService: Company profile query result:', {
+        rowCount: result.rows.length,
+        data: result.rows[0] || 'No data found'
+      });
+      
       if (result.rows.length > 0) {
-        return result.rows[0];
+        const profile = result.rows[0];
+        console.log('PDFService: Using database company profile:', {
+          company_name: profile.company_name,
+          address: profile.address,
+          city: profile.city,
+          phone: profile.phone,
+          email: profile.email,
+          website: profile.website,
+          logo_url: profile.logo_url
+        });
+        return profile;
       }
       
       // Return default values if no profile exists
+      console.log('PDFService: No company profile found, using defaults');
       return {
         company_name: 'AmpTrack',
         footer_text: 'Thank you for your business!',
@@ -37,7 +54,7 @@ class PDFService {
         country: null
       };
     } catch (error) {
-      console.error('Error fetching company profile:', error);
+      console.error('PDFService: Error fetching company profile:', error);
       // Return default values on error
       return {
         company_name: 'AmpTrack',
@@ -211,6 +228,16 @@ class PDFService {
   }
 
   static generateEstimateHTML(estimate, companyProfile) {
+    console.log('PDFService: generateEstimateHTML called with company profile:', {
+      company_name: companyProfile?.company_name,
+      address: companyProfile?.address,
+      city: companyProfile?.city,
+      phone: companyProfile?.phone,
+      email: companyProfile?.email,
+      website: companyProfile?.website,
+      logo_url: companyProfile?.logo_url
+    });
+    
     const formatCurrency = (amount) => {
       const numAmount = parseFloat(amount) || 0;
       return new Intl.NumberFormat('en-US', {
@@ -258,7 +285,9 @@ class PDFService {
         addressParts.push(cityLine);
       }
       if (companyProfile.country) addressParts.push(escapeHtml(companyProfile.country));
-      return addressParts.length > 0 ? addressParts.join('<br>') : '';
+      const result = addressParts.length > 0 ? addressParts.join('<br>') : '';
+      console.log('PDFService: generateCompanyAddress result:', result);
+      return result;
     };
 
     const generateCompanyContacts = () => {
@@ -266,7 +295,9 @@ class PDFService {
       if (companyProfile.phone) contacts.push(`<strong>Phone:</strong> ${escapeHtml(companyProfile.phone)}`);
       if (companyProfile.email) contacts.push(`<strong>Email:</strong> ${escapeHtml(companyProfile.email)}`);
       if (companyProfile.website) contacts.push(`<strong>Website:</strong> ${escapeHtml(companyProfile.website)}`);
-      return contacts.length > 0 ? contacts.join('<br>') : '';
+      const result = contacts.length > 0 ? contacts.join('<br>') : '';
+      console.log('PDFService: generateCompanyContacts result:', result);
+      return result;
     };
 
     return `
